@@ -1,32 +1,79 @@
-name: Deploy to GitHub Pages
+name: CI and Deploy to GitHub Pages
 
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  ci:
+    name: Checks
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate HTML
+        run: npx --yes html-validate@8 index.html
+
+      - name: Check project rules
+        run: |
+          fail=0
+          for pattern in 'localStorage' 'sessionStorage' 'indexedDB' 'document\.cookie' 'alert\(' 'confirm\(' '!important' \
+                         '<script[^>]+src=' '<link[^>]+rel="stylesheet"' '@import'; do
+            if grep -nE "$pattern" index.html; then
+              echo "::error file=index.html::Forbidden pattern found: $pattern"
+              fail=1
+            fi
+          done
+          exit $fail
+
+  deploy:
+    name: Deploy
+    needs: ci
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+
+      # Publish only the site files, so repo files such as CLAUDE.md are not served.
+      - name: Build site folder
+        run: |
+          mkdir -p _site
+          cp index.html _site/
+
       - uses: actions/configure-pages@v5
         with:
           enablement: true
+
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _site
+
       - id: deployment
         uses: actions/deploy-pages@v4

@@ -11,3 +11,14 @@ id_rsa*
 # Tooling scratch
 .playwright-mcp/
 .claude/settings.local.json
+
+# Local data, logs and dependencies
+*.sqlite
+*.db
+*.log
+node_modules/
+_site/
+
+# OS junk
+Thumbs.db
+.DS_Store
